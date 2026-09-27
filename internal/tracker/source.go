@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wyw14/solo-036/internal/model"
@@ -32,6 +33,7 @@ type SourceObservation struct {
 }
 
 type SourceLineage struct {
+	mu           sync.RWMutex
 	observations map[string]SourceObservation
 	children     map[string][]string
 }
@@ -64,6 +66,8 @@ func (l *SourceLineage) Add(observation SourceObservation) error {
 	default:
 		return errors.New("observation source kind is invalid")
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if _, exists := l.observations[observation.ObservationID]; exists {
 		return errors.New("observation id already exists")
 	}
@@ -88,12 +92,14 @@ func (l *SourceLineage) Add(observation SourceObservation) error {
 }
 
 func (l *SourceLineage) Observations(runID, stationID string, generation int64) []SourceObservation {
+	l.mu.RLock()
 	out := make([]SourceObservation, 0)
 	for _, observation := range l.observations {
 		if observation.RunID == runID && observation.StationID == stationID && observation.Generation == generation {
 			out = append(out, observation)
 		}
 	}
+	l.mu.RUnlock()
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].ObservedAt.Equal(out[j].ObservedAt) {
 			return out[i].ObservationID < out[j].ObservationID
